@@ -1,23 +1,13 @@
 from torch import nn
 from torch.nn import Sequential
+import torch
 
 
 class BaselineModel(nn.Module):
-    """
-    Simple MLP
-    """
-
     def __init__(self, n_feats, n_class, fc_hidden=512):
-        """
-        Args:
-            n_feats (int): number of input features.
-            n_class (int): number of classes.
-            fc_hidden (int): number of hidden features.
-        """
         super().__init__()
 
         self.net = Sequential(
-            # people say it can approximate any function...
             nn.Linear(in_features=n_feats, out_features=fc_hidden),
             nn.ReLU(),
             nn.Linear(in_features=fc_hidden, out_features=fc_hidden),
@@ -26,20 +16,9 @@ class BaselineModel(nn.Module):
         )
 
     def forward(self, data_object, **batch):
-        """
-        Model forward method.
-
-        Args:
-            data_object (Tensor): input vector.
-        Returns:
-            output (dict): output dict containing logits.
-        """
         return {"logits": self.net(data_object)}
 
     def __str__(self):
-        """
-        Model prints with the number of parameters.
-        """
         all_parameters = sum([p.numel() for p in self.parameters()])
         trainable_parameters = sum(
             [p.numel() for p in self.parameters() if p.requires_grad]
@@ -50,3 +29,53 @@ class BaselineModel(nn.Module):
         result_info = result_info + f"\nTrainable parameters: {trainable_parameters}"
 
         return result_info
+
+
+class MFM(nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self.channels = channels
+
+    def forward(self, x):
+        c = self.channels
+        x1, x2 = x[:, :c], x[:, c:]
+        return torch.maximum(x1, x2)
+
+
+class ConvMFMBlock(nn.Module):
+    def __init__(self, in_ch: int, out_ch: int, k: int = 3, s: int = 1, p: int = 1, pool: bool = True):
+        super().__init__()
+        self.conv = nn.Conv2d(in_ch, out_ch * 2, kernel_size=k, stride=s, padding=p, bias=False)
+        self.bn = nn.BatchNorm2d(out_ch * 2)
+        self.mfm = MFM(out_ch)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2) if pool else nn.Identity()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.mfm(x)
+        x = self.pool(x)
+        return x
+
+
+class LCNN(nn.Module):
+    def __init__(self, n_class: int = 2, base_ch: int = 64, dropout: float = 0.2):
+        super().__init__()
+        self.front = nn.Sequential(
+            ConvMFMBlock(1, base_ch, k=5, p=2, pool=True),
+            ConvMFMBlock(base_ch, 128, k=3, p=1, pool=True),
+            ConvMFMBlock(128, 256, k=3, p=1, pool=True),
+            ConvMFMBlock(256, 256, k=3, p=1, pool=True),
+        )
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(p=dropout),
+            nn.Linear(256, n_class),
+        )
+
+    def forward(self, data_object, **batch):
+        x = self.front(data_object)
+        x = self.pool(x)
+        logits = self.classifier(x)
+        return {"logits": logits}
