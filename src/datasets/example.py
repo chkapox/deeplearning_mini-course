@@ -6,7 +6,7 @@ from pathlib import Path
 import torchaudio
 from src.datasets.base_dataset import BaseDataset
 from src.utils.io_utils import ROOT_PATH, read_json, write_json
-
+# torchaudio.set_audio_backend("soundfile")
 class ExampleDataset(BaseDataset):
 
     def __init__(
@@ -32,7 +32,7 @@ class ExampleDataset(BaseDataset):
         self.n_fft = n_fft
         self.win_length = win_length
         self.hop_length = hop_length
-
+        self._resamplers: dict[int, torchaudio.transforms.Resample] = {}
         index = self._create_index()
         super().__init__(
             index=index,
@@ -40,8 +40,6 @@ class ExampleDataset(BaseDataset):
             shuffle_index=shuffle_index,
             instance_transforms=instance_transforms,
         )
-
-        self._resampler = torchaudio.transforms.Resample(orig_freq=0, new_freq=sample_rate)
 
     def _protocol_path(self) -> Path:
         proto_dir = self.root / "ASVspoof2019_LA_cm_protocols"
@@ -58,18 +56,22 @@ class ExampleDataset(BaseDataset):
                      "eval":  "ASVspoof2019_LA_eval"}[self.split]
         return self.root / split_dir / "flac"
 
-    @staticmethod
-    def _parse_protocol_line(line: str):
+    def _parse_protocol_line(self, line: str):
         parts = line.strip().split()
         if not parts or line.startswith("#"):
             return None
-        label_str = parts[-1].lower()
-        if label_str not in {"bonafide", "spoof"}:
-            return None
-        label = 1 if label_str == "bonafide" else 0
-        utt = next((t for t in parts if t.startswith("LA_")), None)
+
+        utt = next((t for t in parts if t.startswith(("LA_T_", "LA_D_", "LA_E_"))), None)
         if utt is None:
-            utt = parts[1] if len(parts) > 1 else parts[0]
+            return None
+
+        label = None
+        if self.split in {"train", "dev"}:
+            label_str = parts[-1].lower()
+            if label_str not in {"bonafide", "spoof"}:
+                return None
+            label = 1 if label_str == "bonafide" else 0
+
         return utt, label
 
     def _create_index(self) -> list[dict]:
@@ -102,17 +104,20 @@ class ExampleDataset(BaseDataset):
         if wav.shape[0] > 1:
             wav = wav.mean(dim=0, keepdim=True)
         if sr != self.sample_rate:
-            self._resampler.orig_freq = sr
-            wav = self._resampler(wav)
+            resampler = self._resamplers.get(sr)
+            if resampler is None:
+                resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
+                self._resamplers[sr] = resampler
+            wav = resampler(wav)
 
-        stft = torch.stft(
-            wav.squeeze(0),
+        mel = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.sample_rate,
             n_fft=self.n_fft,
-            hop_length=self.hop_length,
             win_length=self.win_length,
+            hop_length=self.hop_length,
+            n_mels=64,            # ← 64 мел-банок — хороший старт
             center=True,
-            return_complex=True,
-        )
-        mag = stft.abs()
-        log_mag = torch.log1p(mag)
-        return log_mag.unsqueeze(0)
+            power=2.0,
+        )(wav)                    # (1, n_mels, T)
+        logmel = torch.log1p(mel)
+        return logmel            # оставляем (1, F, T)

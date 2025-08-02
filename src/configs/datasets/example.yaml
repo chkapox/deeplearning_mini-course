@@ -1,5 +1,5 @@
 train:
-  _target_: src.datasets.ASVspoofLADataset
+  _target_: src.datasets.example.ExampleDataset
   root: "data/ASVspoof2019/LA"
   split: "train"
   sample_rate: 16000
@@ -11,7 +11,7 @@ train:
   instance_transforms: ${transforms.instance_transforms.train}
 
 val:
-  _target_: src.datasets.ASVspoofLADataset
+  _target_: src.datasets.example.ExampleDataset
   root: "data/ASVspoof2019/LA"
   split: "dev"
   sample_rate: 16000
@@ -23,7 +23,7 @@ val:
   instance_transforms: ${transforms.instance_transforms.inference}
 
 test:
-  _target_: src.datasets.ASVspoofLADataset
+  _target_: src.datasets.example.ExampleDataset
   root: "data/ASVspoof2019/LA"
   split: "dev"
   sample_rate: 16000

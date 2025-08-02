@@ -14,8 +14,10 @@ lr_scheduler:
   gamma: 0.9
   step_size: ${trainer.epoch_len}
 loss_function:
-  _target_: torch.nn.CrossEntropyLoss
+  _target_: src.loss.ExampleLoss
+  weight: [0.56, 4.87]
 trainer:
+  monitor: "max val_AUROC"
   log_step: 50
   n_epochs: 100
   epoch_len: 500
@@ -23,8 +25,18 @@ trainer:
   resume_from: null # null or path to the checkpoint dir with *.pth and config.yaml
   device: auto # device name or "auto"
   override: False # if True, will override the previous run with the same name
-  monitor: "max test_MulticlassAccuracy" # "off" or "max/min metric_name", i.e. our goal is to maximize/minimize metric
+  # monitor: "max test_MulticlassAccuracy" # "off" or "max/min metric_name", i.e. our goal is to maximize/minimize metric
   save_period: 5 # checkpoint each save_period epochs in addition to the best epoch
   early_stop: ${trainer.n_epochs} # epochs for early stopping
   save_dir: "saved"
   seed: 1
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 32
+  num_workers: 2
+  pin_memory: true
+  prefetch_factor: 2        # 👈 добавь вот это
+  persistent_workers: true  # и это, если не было
+  collate_fn:
+    _target_: src.datasets.collate.collate_fn
+    _partial_: true

@@ -6,17 +6,33 @@ import torch
 class BaselineModel(nn.Module):
     def __init__(self, n_feats, n_class, fc_hidden=512):
         super().__init__()
-
+        # MLP-путь (для векторов [B, n_feats])
         self.net = Sequential(
-            nn.Linear(in_features=n_feats, out_features=fc_hidden),
-            nn.ReLU(),
-            nn.Linear(in_features=fc_hidden, out_features=fc_hidden),
-            nn.ReLU(),
-            nn.Linear(in_features=fc_hidden, out_features=n_class),
+            nn.Linear(n_feats, fc_hidden), nn.ReLU(),
+            nn.Linear(fc_hidden, fc_hidden), nn.ReLU(),
+            nn.Linear(fc_hidden, n_class),
         )
-
+        # CNN-путь (для карт [B,1,F,T])
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),   # глобальный пул по F и T
+        )
+        self.cnn_head = nn.Linear(32, n_class)
+        
     def forward(self, data_object, **batch):
-        return {"logits": self.net(data_object)}
+        x = data_object
+        if x.dim() == 4:              # (B,1,F,T)
+            h = self.cnn(x).squeeze(-1).squeeze(-1)  # (B,32)
+            logits = self.cnn_head(h)
+            return {"logits": logits}
+        elif x.dim() == 3:            # (B,F,T) -> усредним по времени
+            x = x.mean(dim=-1)
+        elif x.dim() == 1:
+            x = x.unsqueeze(0)
+        # дальше MLP-путь
+        return {"logits": self.net(x)}
+
 
     def __str__(self):
         all_parameters = sum([p.numel() for p in self.parameters()])

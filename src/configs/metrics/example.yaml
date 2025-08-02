@@ -1,21 +1,33 @@
-device: "auto"
-train: # metrics that are calculated during training
+device: auto
+
+train:
   - _target_: src.metrics.ExampleMetric
+    name: TRAIN_Accuracy
+    device: ${metrics.device}
     metric:
       _target_: torchmetrics.classification.MulticlassAccuracy
-      num_classes: 10
-    device: ${metrics.device}
-    name: "TRAIN_MulticlassAccuracy" # just an example to see difference
-inference: # metrics that are calculated during inference (eval)
+      num_classes: 2
+
+inference:
   - _target_: src.metrics.ExampleMetric
-    metric:
-      _target_: torchmetrics.classification.MulticlassAccuracy
-      num_classes: 10
+    name: Accuracy
     device: ${metrics.device}
-    name: "MulticlassAccuracy"
+    metric:
+      _target_: torchmetrics.classification.BinaryAccuracy
+      threshold: 0.5
   - _target_: src.metrics.ExampleMetric
-    metric:
-      _target_: torchmetrics.classification.MulticlassAccuracy
-      num_classes: 10
+    name: F1
     device: ${metrics.device}
-    name: "MulticlassAccuracy2.0"
+    metric:
+      _target_: torchmetrics.classification.BinaryF1Score
+  - _target_: src.metrics.ExampleMetric
+    name: AUROC
+    device: ${metrics.device}
+    metric:
+      _target_: torchmetrics.classification.BinaryAUROC
+  # опционально: «EER» как дополнительная метрика
+  - _target_: src.metrics.ExampleMetric
+    name: EER
+    device: ${metrics.device}
+    metric:
+      _target_: torchmetrics.classification.BinaryAUROC   # заглушка, не используется по сути
