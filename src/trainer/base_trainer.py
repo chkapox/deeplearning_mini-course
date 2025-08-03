@@ -4,11 +4,10 @@ import torch
 from numpy import inf
 from torch.nn.utils import clip_grad_norm_
 from tqdm.auto import tqdm
-
+from torch import amp
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
 from src.utils.io_utils import ROOT_PATH
-
 
 class BaseTrainer:
     """
@@ -60,13 +59,21 @@ class BaseTrainer:
         self.config = config
         self.cfg_trainer = self.config.trainer
 
-        self.device = device
+        if isinstance(device, str):
+            dev_str = device.lower()
+            if dev_str == "auto":
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            else:
+                self.device = torch.device(dev_str)
+        else:
+            self.device = device
+
         self.skip_oom = skip_oom
 
         self.logger = logger
         self.log_step = config.trainer.get("log_step", 50)
 
-        self.model = model
+        self.model = model.to(self.device)
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
@@ -141,6 +148,12 @@ class BaseTrainer:
 
         if config.trainer.get("from_pretrained") is not None:
             self._from_pretrained(config.trainer.get("from_pretrained"))
+
+        try:
+            self.scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
+        except TypeError:
+            self.scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+
 
     def train(self):
         """

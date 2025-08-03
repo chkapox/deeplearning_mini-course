@@ -1,19 +1,25 @@
 import torch
-
+import torch.nn.functional as F
 
 def collate_fn(dataset_items: list[dict]):
-    assert len(dataset_items) > 0
-    F = dataset_items[0]["data_object"].shape[-2]
-    max_T = max(x["data_object"].shape[-1] for x in dataset_items)
+    # ожидаем data_object: (1, F, T)
+    Fmax = 0
+    Tmax = 0
+    for it in dataset_items:
+        _, Fcur, Tcur = it["data_object"].shape
+        Fmax = max(Fmax, Fcur)
+        Tmax = max(Tmax, Tcur)
 
-    B = len(dataset_items)
-    batch_data = torch.zeros((B, 1, F, max_T), dtype=dataset_items[0]["data_object"].dtype)
-    labels = torch.empty((B,), dtype=torch.long)
+    feats = []
+    for it in dataset_items:
+        x = it["data_object"]              # (1, F, T)
+        pad_f = Fmax - x.shape[1]
+        pad_t = Tmax - x.shape[2]
+        if pad_f or pad_t:
+            x = F.pad(x, (0, pad_t, 0, pad_f))  # справа по T, снизу по F
+        feats.append(x)
 
-    for i, item in enumerate(dataset_items):
-        x = item["data_object"]
-        T_i = x.shape[-1]
-        batch_data[i, :, :, :T_i] = x
-        labels[i] = int(item["labels"])
-
-    return {"data_object": batch_data, "labels": labels}
+    return {
+        "data_object": torch.stack(feats, dim=0),  # (B, 1, Fmax, Tmax)
+        "labels": torch.tensor([it["labels"] for it in dataset_items]),
+    }

@@ -100,14 +100,13 @@ class ExampleDataset(BaseDataset):
         return index
 
     def load_object(self, path: str) -> torch.Tensor:
+        import torchaudio, torch
         wav, sr = torchaudio.load(path)
         if wav.shape[0] > 1:
             wav = wav.mean(dim=0, keepdim=True)
+
         if sr != self.sample_rate:
-            resampler = self._resamplers.get(sr)
-            if resampler is None:
-                resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
-                self._resamplers[sr] = resampler
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
             wav = resampler(wav)
 
         mel = torchaudio.transforms.MelSpectrogram(
@@ -115,9 +114,9 @@ class ExampleDataset(BaseDataset):
             n_fft=self.n_fft,
             win_length=self.win_length,
             hop_length=self.hop_length,
-            n_mels=64,            # ← 64 мел-банок — хороший старт
+            n_mels=64,      # 64 мел-банок — хороший устойчивый старт
             center=True,
             power=2.0,
-        )(wav)                    # (1, n_mels, T)
-        logmel = torch.log1p(mel)
-        return logmel            # оставляем (1, F, T)
+        )(wav)              # (1, 64, T)
+        logmel = torch.log1p(mel)  # стабильнее, чем |STFT|
+        return logmel               # (1, F, T)

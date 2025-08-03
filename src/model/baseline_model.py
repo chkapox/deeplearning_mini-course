@@ -2,60 +2,54 @@ from torch import nn
 from torch.nn import Sequential
 import torch
 
-
 class BaselineModel(nn.Module):
     def __init__(self, n_feats, n_class, fc_hidden=512):
         super().__init__()
-        # MLP-путь (для векторов [B, n_feats])
-        self.net = Sequential(
+        # MLP-путь (на случай входа [B, n_feats])
+        self.net = nn.Sequential(
             nn.Linear(n_feats, fc_hidden), nn.ReLU(),
             nn.Linear(fc_hidden, fc_hidden), nn.ReLU(),
             nn.Linear(fc_hidden, n_class),
         )
-        # CNN-путь (для карт [B,1,F,T])
+        # LCNN-lite: MFM блоки + GAP
         self.cnn = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),   # глобальный пул по F и T
+            MFM(1, 32, 3, 1, 1),
+            MFM(32, 32, 3, 1, 1),
+            nn.MaxPool2d((2, 2)),
+            nn.Dropout(0.1),
+
+            MFM(32, 64, 3, 1, 1),
+            MFM(64, 64, 3, 1, 1),
+            nn.MaxPool2d((2, 2)),
+            nn.Dropout(0.1),
+
+            nn.AdaptiveAvgPool2d((1, 1)),
         )
-        self.cnn_head = nn.Linear(32, n_class)
-        
+        self.cnn_head = nn.Linear(64, n_class)
+
     def forward(self, data_object, **batch):
         x = data_object
-        if x.dim() == 4:              # (B,1,F,T)
-            h = self.cnn(x).squeeze(-1).squeeze(-1)  # (B,32)
-            logits = self.cnn_head(h)
-            return {"logits": logits}
-        elif x.dim() == 3:            # (B,F,T) -> усредним по времени
+        if x.dim() == 4:                 # (B, 1, F, T)
+            h = self.cnn(x).flatten(1)   # (B, 64)
+            return {"logits": self.cnn_head(h)}
+        elif x.dim() == 3:               # (B, F, T) -> усредним по времени
             x = x.mean(dim=-1)
         elif x.dim() == 1:
             x = x.unsqueeze(0)
-        # дальше MLP-путь
         return {"logits": self.net(x)}
 
-
-    def __str__(self):
-        all_parameters = sum([p.numel() for p in self.parameters()])
-        trainable_parameters = sum(
-            [p.numel() for p in self.parameters() if p.requires_grad]
-        )
-
-        result_info = super().__str__()
-        result_info = result_info + f"\nAll parameters: {all_parameters}"
-        result_info = result_info + f"\nTrainable parameters: {trainable_parameters}"
-
-        return result_info
-
-
 class MFM(nn.Module):
-    def __init__(self, channels: int):
+    """Max-Feature-Map: разделяем каналы надвое и берём поэлементный максимум."""
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=1, padding=1):
         super().__init__()
-        self.channels = channels
+        self.conv = nn.Conv2d(in_ch, out_ch * 2, kernel_size, stride, padding, bias=True)
+        self.bn = nn.BatchNorm2d(out_ch * 2)
 
     def forward(self, x):
-        c = self.channels
-        x1, x2 = x[:, :c], x[:, c:]
-        return torch.maximum(x1, x2)
+        x = self.bn(self.conv(x))
+        c = x.shape[1] // 2
+        a, b = x[:, :c, ...], x[:, c:, ...]
+        return torch.maximum(a, b)
 
 
 class ConvMFMBlock(nn.Module):

@@ -1,5 +1,4 @@
 device: auto
-
 train:
   - _target_: src.metrics.ExampleMetric
     name: TRAIN_Accuracy
@@ -7,7 +6,6 @@ train:
     metric:
       _target_: torchmetrics.classification.MulticlassAccuracy
       num_classes: 2
-
 inference:
   - _target_: src.metrics.ExampleMetric
     name: Accuracy
@@ -25,9 +23,8 @@ inference:
     device: ${metrics.device}
     metric:
       _target_: torchmetrics.classification.BinaryAUROC
-  # опционально: «EER» как дополнительная метрика
   - _target_: src.metrics.ExampleMetric
     name: EER
     device: ${metrics.device}
     metric:
-      _target_: torchmetrics.classification.BinaryAUROC   # заглушка, не используется по сути
+      _target_: torchmetrics.classification.BinaryAUROC  # заглушка, считаем вручную

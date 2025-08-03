@@ -14,24 +14,21 @@ class ExampleMetric(BaseMetric):
         labels = labels.long()
 
         if name == "eer":
-            # prob положительного класса (bonafide=1)
             scores = torch.softmax(logits, dim=1)[:, 1].detach().cpu()
             y = labels.detach().cpu()
-            # вычислим FAR/FRR по всем порогам
             sort_idx = torch.argsort(scores, descending=True)
             y_sorted = y[sort_idx]
             pos = (y_sorted == 1).to(torch.long)
             neg = (y_sorted == 0).to(torch.long)
-            tp = torch.cumsum(pos, 0)
-            fp = torch.cumsum(neg, 0)
             P = pos.sum().item()
             N = neg.sum().item()
             if P == 0 or N == 0:
                 return 0.0
-            tpr = tp.float() / P
-            fpr = fp.float() / N
+            tp = torch.cumsum(pos, 0).float()
+            fp = torch.cumsum(neg, 0).float()
+            tpr = tp / P
+            fpr = fp / N
             fnr = 1 - tpr
-            # точка, где |FPR - FNR| минимальна
             i = torch.argmin(torch.abs(fpr - fnr))
             eer = 0.5 * (fpr[i] + fnr[i])
             return float(eer)
