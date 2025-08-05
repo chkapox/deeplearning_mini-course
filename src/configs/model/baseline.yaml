@@ -1,4 +1,4 @@
-_target_: src.model.BaselineModel
-n_class: 2
-n_feats: 257
-fc_hidden: 256
+_target_: src.model.LCNN
+in_channels: 1
+num_classes: 2
+dropout: 0.5

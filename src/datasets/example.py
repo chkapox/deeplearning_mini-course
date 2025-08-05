@@ -65,14 +65,18 @@ class ExampleDataset(BaseDataset):
         if utt is None:
             return None
 
-        label = None
-        if self.split in {"train", "dev"}:
+        # ── тут правим ─────────────────────────────────────────
+        if self.split == "eval":
+            label = 0          # фиктивная метка, чтобы collate_fn не падал
+        else:
             label_str = parts[-1].lower()
             if label_str not in {"bonafide", "spoof"}:
                 return None
             label = 1 if label_str == "bonafide" else 0
+        # ───────────────────────────────────────────────────────
 
         return utt, label
+
 
     def _create_index(self) -> list[dict]:
         proto = self._protocol_path()

@@ -1,0 +1,7 @@
+- writer.mode=disabled
+- trainer.resume_from=model_best.pth
+- datasets.test.root=data/ASVspoof2019/LA
+- datasets.test.split=eval
+- dataloader.batch_size=64
+- dataloader.num_workers=4
+- +out_csv=grading/students_solutions/artur.csv
