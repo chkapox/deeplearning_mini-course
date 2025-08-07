@@ -22,7 +22,7 @@ def main(cfg: DictConfig):
 
     # ── dataset: форсим eval и без перемешивания ─────────────────────────────
     ds_cfg = cfg.datasets.test
-    ds_cfg.split = "eval"
+    ds_cfg.split = cfg.datasets.test.split
     ds_cfg.shuffle_index = False
     dataset = instantiate(ds_cfg)
 
@@ -42,6 +42,8 @@ def main(cfg: DictConfig):
     ckpt_path = ckpt_dir / ckpt_name
     state = torch.load(str(ckpt_path), map_location=device)
     model.load_state_dict(state.get("state_dict", state))
+    print(">>> checkpoint loaded from:", ckpt_path)
+    print(">>> param abs-mean:", next(model.parameters()).abs().mean().item())
     model.eval()
 
     # ── ключи в порядке датасета ────────────────────────────────────────────
@@ -62,7 +64,7 @@ def main(cfg: DictConfig):
 
     # ── тип скора ────────────────────────────────────────────────────────────
     # +score_type=p_bona | p_spoof | logit_diff | neg_logit_diff
-    score_type = str(getattr(cfg, "score_type", "p_spoof")).lower()
+    score_type = str(getattr(cfg, "score_type", "p_bona")).lower()
     assert score_type in {"p_bona", "p_spoof", "logit_diff", "neg_logit_diff"}
 
     # ── куда писать CSV ──────────────────────────────────────────────────────

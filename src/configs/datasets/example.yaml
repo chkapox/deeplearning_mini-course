@@ -9,7 +9,7 @@ train:
   limit: null
   shuffle_index: true
   instance_transforms: ${transforms.instance_transforms.train}
-
+  max_frames: 600
 val:
   _target_: src.datasets.example.ExampleDataset
   root: "data/ASVspoof2019/LA"
@@ -21,11 +21,11 @@ val:
   limit: null
   shuffle_index: false
   instance_transforms: ${transforms.instance_transforms.inference}
-
+  max_frames: 600
 test:
   _target_: src.datasets.example.ExampleDataset
   root: "data/ASVspoof2019/LA"
-  split: "dev"
+  split: "eval"
   sample_rate: 16000
   n_fft: 512
   win_length: 400
@@ -33,3 +33,4 @@ test:
   limit: null
   shuffle_index: false
   instance_transforms: ${transforms.instance_transforms.inference}
+  max_frames: 600

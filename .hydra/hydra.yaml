@@ -114,16 +114,20 @@ hydra:
     - hydra.mode=RUN
     task:
     - writer.mode=disabled
-    - trainer.resume_from=model_best.pth
+    - trainer.save_dir=saved_fix2
+    - trainer.resume_from=C:\Users\artur\Desktop\minicourse\deeplearning_mini-course\saved_fix2\lcnn_mel_cmvn600\model_best.pth
+    - writer.run_name=lcnn_mel_cmvn600
     - datasets.test.root=data/ASVspoof2019/LA
     - datasets.test.split=eval
-    - dataloader.batch_size=64
-    - dataloader.num_workers=4
+    - dataloader.num_workers=6
+    - +dataloader.drop_last=false
+    - +score_type=p_bona
+    - +apply_tform=true
     - +out_csv=grading/students_solutions/artur.csv
   job:
     name: inference
     chdir: null
-    override_dirname: +out_csv=grading/students_solutions/artur.csv,dataloader.batch_size=64,dataloader.num_workers=4,datasets.test.root=data/ASVspoof2019/LA,datasets.test.split=eval,trainer.resume_from=model_best.pth,writer.mode=disabled
+    override_dirname: +apply_tform=true,+dataloader.drop_last=false,+out_csv=grading/students_solutions/artur.csv,+score_type=p_bona,dataloader.num_workers=6,datasets.test.root=data/ASVspoof2019/LA,datasets.test.split=eval,trainer.resume_from=C:\Users\artur\Desktop\minicourse\deeplearning_mini-course\saved_fix2\lcnn_mel_cmvn600\model_best.pth,trainer.save_dir=saved_fix2,writer.mode=disabled,writer.run_name=lcnn_mel_cmvn600
     id: ???
     num: ???
     config_name: baseline

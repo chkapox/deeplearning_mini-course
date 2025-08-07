@@ -8,6 +8,41 @@ from torch import amp
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
 from src.utils.io_utils import ROOT_PATH
+import gc
+import numpy as np
+
+def _compute_eer_from_scores(probs: torch.Tensor, labels: torch.Tensor) -> float:
+    order = torch.argsort(probs, descending=True)
+    y = labels[order].int()
+    P = (y == 1).sum().item()
+    N = (y == 0).sum().item()
+    if P == 0 or N == 0:
+        return 0.5
+    tp = torch.cumsum((y == 1).float(), dim=0)
+    fp = torch.cumsum((y == 0).float(), dim=0)
+    tpr = tp / P
+    fpr = fp / N
+    fnr = 1 - tpr
+    i = torch.argmin(torch.abs(fpr - fnr))
+    return 0.5 * (float(fpr[i]) + float(fnr[i]))
+
+def _roc_auc_torch(probs: torch.Tensor, labels: torch.Tensor) -> float:
+    order = torch.argsort(probs, descending=True)
+    y = labels[order].int()
+    P = (y == 1).sum().item()
+    N = (y == 0).sum().item()
+    if P == 0 or N == 0:
+        return 0.5
+    tp = torch.cumsum((y == 1).float(), dim=0)
+    fp = torch.cumsum((y == 0).float(), dim=0)
+    tpr = tp / P
+    fpr = fp / N
+    # крайние точки
+    device = probs.device
+    tpr = torch.cat([torch.tensor([0.0], device=device), tpr, torch.tensor([1.0], device=device)])
+    fpr = torch.cat([torch.tensor([0.0], device=device), fpr, torch.tensor([1.0], device=device)])
+    return torch.trapz(tpr, fpr).item()
+
 
 class BaseTrainer:
     """
@@ -254,6 +289,7 @@ class BaseTrainer:
                 break
 
         logs = last_train_metrics
+        self.writer.add_scalar("loss_train", logs["loss"])
 
         # Run val/test
         for part, dataloader in self.evaluation_dataloaders.items():
@@ -261,38 +297,73 @@ class BaseTrainer:
             logs.update(**{f"{part}_{name}": value for name, value in val_logs.items()})
 
         return logs
-
+    
     def _evaluation_epoch(self, epoch, part, dataloader):
-        """
-        Evaluate model on the partition after training for an epoch.
-
-        Args:
-            epoch (int): current training epoch.
-            part (str): partition to evaluate on
-            dataloader (DataLoader): dataloader for the partition.
-        Returns:
-            logs (dict): logs that contain the information about evaluation.
-        """
         self.is_train = False
         self.model.eval()
         self.evaluation_metrics.reset()
+
+        all_logits = []
+        all_labels = []
+
         with torch.no_grad():
-            for batch_idx, batch in tqdm(
-                enumerate(dataloader),
-                desc=part,
-                total=len(dataloader),
-            ):
-                batch = self.process_batch(
-                    batch,
-                    metrics=self.evaluation_metrics,
-                )
+            for batch_idx, batch in tqdm(enumerate(dataloader), desc=part, total=len(dataloader)):
+                batch = self.process_batch(batch, metrics=self.evaluation_metrics)
+                all_logits.append(batch["logits"].detach().cpu())
+                all_labels.append(batch["labels"].detach().cpu())
+
             self.writer.set_step(epoch * self.epoch_len, part)
             self._log_scalars(self.evaluation_metrics)
-            self._log_batch(
-                batch_idx, batch, part
-            )  # log only the last batch during inference
+            self._log_batch(batch_idx, batch, part)
 
-        return self.evaluation_metrics.result()
+        # если даталоадер пуст
+        if len(all_logits) == 0:
+            logs = self.evaluation_metrics.result()
+            logs.update({"Accuracy": 0.0, "F1": 0.0, "AUROC": 0.5, "EER": 0.5})
+            # лог в W&B (опционально)
+            self.writer.add_scalar(f"{part}_Accuracy", 0.0)
+            self.writer.add_scalar(f"{part}_F1",       0.0)
+            self.writer.add_scalar(f"{part}_AUROC",    0.5)
+            self.writer.add_scalar(f"{part}_EER",      0.5)
+            return logs
+
+        # Глобальные метрики по всему вал-сету
+        logits = torch.cat(all_logits, dim=0)
+        labels = torch.cat(all_labels, dim=0).long()
+        probs  = torch.softmax(logits, dim=1)[:, 1]   # p_bona
+
+        preds = (probs >= 0.5).long()
+        acc = (preds == labels).float().mean().item()
+        tp = ((preds == 1) & (labels == 1)).sum().item()
+        fp = ((preds == 1) & (labels == 0)).sum().item()
+        fn = ((preds == 0) & (labels == 1)).sum().item()
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+        auroc = _roc_auc_torch(probs, labels)
+        eer = _compute_eer_from_scores(probs, labels)
+
+        logs = self.evaluation_metrics.result()
+        logs["Accuracy"] = float(acc)
+        logs["F1"]       = float(f1)
+        logs["AUROC"]    = float(auroc)
+        logs["EER"]      = float(eer)
+
+        # явный лог в W&B
+        self.writer.add_scalar(f"{part}_Accuracy", acc)
+        self.writer.add_scalar(f"{part}_F1",       f1)
+        self.writer.add_scalar(f"{part}_AUROC",    auroc)
+        self.writer.add_scalar(f"{part}_EER",      eer)
+
+        # небольшая уборка памяти — полезно на Windows
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return logs
+
+
+
 
     def _monitor_performance(self, logs, not_improved_count):
         """

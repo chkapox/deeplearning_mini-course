@@ -19,10 +19,10 @@ loss_function:
   weight: [1.0, 5.0]        # [spoof, bonafide] — если знаем дисбаланс; поправим позже
   label_smoothing: 0.1
 trainer:
-  monitor: "max val_AUROC"
+  monitor: "min val_EER"
   log_step: 50
-  n_epochs: 100
-  epoch_len: 500
+  n_epochs: 15
+  epoch_len: 600
   device_tensors: ["data_object", "labels"] # which tensors should be on device (ex. GPU)
   resume_from: null # null or path to the checkpoint dir with *.pth and config.yaml
   device: auto # device name or "auto"
@@ -32,13 +32,13 @@ trainer:
   early_stop: ${trainer.n_epochs} # epochs for early stopping
   save_dir: "Q://deeplearn"
   seed: 1
-dataloader:
-  _target_: torch.utils.data.DataLoader
-  batch_size: 32
-  num_workers: 2
-  pin_memory: true
-  prefetch_factor: 2        # 👈 добавь вот это
-  persistent_workers: true  # и это, если не было
-  collate_fn:
-    _target_: src.datasets.collate.collate_fn
-    _partial_: true
+# dataloader:
+#   _target_: torch.utils.data.DataLoader
+#   batch_size: 32
+#   num_workers: 2
+#   pin_memory: true
+#   prefetch_factor: 2        # 👈 добавь вот это
+#   persistent_workers: true  # и это, если не было
+#   collate_fn:
+#     _target_: src.datasets.collate.collate_fn
+#     _partial_: true
